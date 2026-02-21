@@ -1,0 +1,16 @@
+{
+  "configurations": [
+    {
+      "name": "TI-84 CE",
+      "includePath": [
+        "${workspaceFolder}/*/src",
+        "${env:CEDEV}/include/**"
+      ],
+      "defines": [],
+      "compilerPath": "",
+      "cStandard": "c11",
+      "intelliSenseMode": "clang-x64"
+    }
+  ],
+  "version": 4
+}
