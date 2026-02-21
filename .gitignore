@@ -1,0 +1,16 @@
+# CEdev intermediate build output
+**/obj/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Local editor/assistant files
+.claude/
+.vscode/
+CLAUDE.md
+TI-nspire_refactor.md
+
+# OS files
+Thumbs.db
+.DS_Store
