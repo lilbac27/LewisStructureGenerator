@@ -1,8 +1,8 @@
-# Lewis Structure Generator (TI-84 Plus CE)
+# Lewis Dot Structure Generator (TI-84 Plus CE)
 
-This repository publishes the `lewis-dot` CEdev project for TI-84 Plus CE calculators.
+This repository contains the `lewis-dot` CEdev project for TI-84 Plus CE calculators.
 
-`lewis-dot` is an interactive Lewis dot structure generator with support for molecular charge and resonance forms.
+`lewis-dot` is an interactive Lewis dot structure generator with charge handling and resonance navigation.
 
 ## Screenshot
 
@@ -14,14 +14,6 @@ This repository publishes the `lewis-dot` CEdev project for TI-84 Plus CE calcul
 - `CEDEV` environment variable set to your CEdev install path
 - `make` available in your shell
 
-The project `Makefile` includes:
-
-```make
-ifndef CEDEV
-$(error CEDEV environment variable is not set.)
-endif
-```
-
 ## Build
 
 Build from the `lewis-dot` directory:
@@ -31,7 +23,7 @@ cd lewis-dot
 make
 ```
 
-Compiled calculator files are written to `lewis-dot/bin/`.
+Output files are generated in `lewis-dot/bin/`.
 
 To clean generated files:
 
@@ -39,9 +31,17 @@ To clean generated files:
 make clean
 ```
 
-## Controls
+## Host Tests
 
-### `lewis-dot`
+Run the engine tests from repository root:
+
+```powershell
+./lewis-dot/tests/run_tests.ps1
+```
+
+The script compiles and runs a host executable with `clang`, `gcc`, or `zig cc`.
+
+## Controls
 
 - Arrow keys: move periodic-table cursor
 - `Enter`: add highlighted element
@@ -52,6 +52,59 @@ make clean
 - `Clear`: return to periodic table view
 - `Mode`: quit
 
-## Project Layout
+## File Purpose Map
 
-- `lewis-dot/` - Lewis structure generator source + CEdev build files
+`lewis-dot/Makefile`
+- CEdev build configuration for the `LEWIS` target.
+
+`lewis-dot/src/main.c`
+- App entry point and runtime loop.
+- Coordinates screen mode switching, key handling, and warning overlays.
+
+`lewis-dot/src/lewis_model.h`
+- Shared constants and core data structures (`Element`, `Molecule`, `LewisStructure`, `InvalidReason`).
+
+`lewis-dot/src/lewis_model.c`
+- Element table definitions and periodic table grid initialization.
+- Model reset helper (`molecule_reset`).
+
+`lewis-dot/src/lewis_engine.h`
+- Public API for structure generation and invalid-reason messaging.
+
+`lewis-dot/src/lewis_engine.c`
+- Lewis generation logic:
+- central-atom choice
+- skeleton building
+- octet/duet and formal-charge constraints
+- resonance generation and de-duplication
+- invalid-reason classification
+
+`lewis-dot/src/layout.h`
+- Public API for atom coordinate layout helpers.
+
+`lewis-dot/src/layout.c`
+- Connectivity-aware atom coordinate placement:
+- linear-chain layout for path-like graphs
+- tree-from-central layout fallback
+
+`lewis-dot/src/ui_text.h`
+- Shared UI text helper declarations.
+
+`lewis-dot/src/ui_text.c`
+- Safe clipped text drawing, integer/string append helpers, and text contrast helper.
+
+`lewis-dot/src/ui_periodic.h`
+- Public API for periodic-table cursor movement and rendering.
+
+`lewis-dot/src/ui_periodic.c`
+- Periodic-table screen rendering (header, selected atoms bar, element card, help text).
+- Sparse-grid cursor movement behavior.
+
+`lewis-dot/tests/lewis_engine_tests.c`
+- Host-side deterministic engine tests for representative molecules, resonance behavior, and invalid-input paths.
+
+`lewis-dot/tests/run_tests.ps1`
+- PowerShell script to compile and run host tests (`clang`, `gcc`, or `zig cc`).
+
+`lewis-dot/tests/README.md`
+- Test scope and usage instructions.
