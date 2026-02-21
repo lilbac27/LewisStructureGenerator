@@ -1,8 +1,10 @@
 # Lewis Dot Structure Generator (TI-84 Plus CE)
 
-This repository contains the `lewis-dot` CEdev project for TI-84 Plus CE calculators.
+This repository is dedicated to the `lewis-dot` CEdev program for TI-84 Plus CE calculators.
 
 `lewis-dot` is an interactive Lewis dot structure generator with charge handling and resonance navigation.
+
+Only `lewis-dot` project files are tracked in Git for this repo. This README documents that project only.
 
 ## Screenshot
 
