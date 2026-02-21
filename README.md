@@ -4,6 +4,10 @@ This repository publishes the `lewis-dot` CEdev project for TI-84 Plus CE calcul
 
 `lewis-dot` is an interactive Lewis dot structure generator with support for molecular charge and resonance forms.
 
+## Screenshot
+
+![Periodic Table Menu](lewis-dot/demoImages/periodicTableMenu.png)
+
 ## Requirements
 
 - [CEdev](https://ce-programming.github.io/toolchain/) installed
