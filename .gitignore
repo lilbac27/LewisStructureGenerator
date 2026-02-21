@@ -11,6 +11,10 @@ __pycache__/
 CLAUDE.md
 TI-nspire_refactor.md
 
+# Keep non-published local projects out of this repo
+formula-sheet/
+vsepr-table/
+
 # OS files
 Thumbs.db
 .DS_Store
