@@ -6,6 +6,7 @@
 
 char *int_to_str(int val, char *buf);
 void safe_print(const char *s, int x, int y);
+uint8_t safe_print_wrapped(const char *text, int x, int y, int max_width, uint8_t max_lines);
 void append_str(char *dst, size_t cap, const char *src);
 void append_int(char *dst, size_t cap, int val);
 uint8_t text_color_for_bg(uint8_t bg);

@@ -14,6 +14,7 @@
  * Controls (Lewis Structure screen):
  *   [left]/[right] - cycle resonance structures
  *   [alpha]        - cycle charge and regenerate
+ *   [2nd]          - hide/show VSEPR card (force-show when auto-hidden)
  *   [clear]        - return to periodic table
  */
 
@@ -28,7 +29,9 @@
 #include "lewis_engine.h"
 #include "lewis_model.h"
 #include "ui_periodic.h"
+#include "ui_theme.h"
 #include "ui_text.h"
+#include "ui_vsepr.h"
 
 static Molecule mol;
 static uint8_t cur_row = 0;
@@ -44,25 +47,25 @@ static void cycle_charge(Molecule *m)
     else m->charge = 0;
 }
 
-static void draw_lewis(void)
+static bool draw_lewis(bool vsepr_force_visible, bool vsepr_card_enabled)
 {
-    gfx_FillScreen(COL_WHITE);
+    gfx_FillScreen(UI_BG);
 
     if (mol.num_res == 0 || mol.num_atoms == 0) {
-        gfx_SetTextFGColor(COL_BLACK);
-        gfx_SetTextBGColor(COL_WHITE);
+        gfx_SetTextFGColor(UI_TEXT);
+        gfx_SetTextBGColor(UI_BG);
         safe_print("No valid structure", 80, 114);
         safe_print(invalid_reason_message(mol.invalid_reason), 24, 128);
         safe_print("[alpha] change charge  [clear] back", 28, 148);
-        return;
+        return false;
     }
 
     LewisStructure *ls = &mol.res[mol.cur_res];
 
-    gfx_SetColor(COL_BLUE);
+    gfx_SetColor(UI_SELECTED_BG);
     gfx_FillRectangle(0, 0, SCR_W, 24);
-    gfx_SetTextFGColor(COL_WHITE);
-    gfx_SetTextBGColor(COL_BLUE);
+    gfx_SetTextFGColor(UI_SELECTED_TEXT);
+    gfx_SetTextBGColor(UI_SELECTED_BG);
 
     /* Build formula string */
     char formula[48] = "";
@@ -112,7 +115,7 @@ static void draw_lewis(void)
         safe_print(rbuf, 4, 14);
     }
 
-    gfx_SetTextBGColor(COL_WHITE);
+    gfx_SetTextBGColor(UI_BG);
 
     int ax[MAX_ATOMS];
     int ay[MAX_ATOMS];
@@ -210,16 +213,16 @@ static void draw_lewis(void)
         int sy = ay[i] - 4;
 
         int tw = (int)strlen(e->symbol) * 8 + 2;
-        gfx_SetColor(COL_WHITE);
+        gfx_SetColor(UI_BG);
         gfx_FillRectangle(sx - 1, sy - 1, tw, 10);
 
-        gfx_SetTextFGColor(e->color);
+        gfx_SetTextFGColor(UI_TEXT);
         if (sx >= 0 && sx < SCR_W && sy >= 0 && sy < SCR_H) {
             safe_print(e->symbol, sx, sy);
         }
 
         if (ls->lone_pairs[i] > 0) {
-            gfx_SetColor(e->color);
+            gfx_SetColor(UI_TEXT);
 
             bool slot_used[4] = { false, false, false, false };
             for (uint8_t b = 0; b < ls->num_bonds; b++) {
@@ -277,8 +280,8 @@ static void draw_lewis(void)
             } else {
                 int_to_str(ls->formal_charge[i], fcbuf);
             }
-            gfx_SetTextFGColor(COL_RED);
-            gfx_SetTextBGColor(COL_WHITE);
+            gfx_SetTextFGColor(UI_TEXT);
+            gfx_SetTextBGColor(UI_BG);
             int fcx = ax[i] + (int)strlen(e->symbol) * 4 + 2;
             int fcy = ay[i] - 12;
             if (fcx >= 0 && fcx < SCR_W - 16 && fcy >= 0 && fcy < SCR_H) {
@@ -287,13 +290,36 @@ static void draw_lewis(void)
         }
     }
 
-    gfx_SetTextFGColor(COL_DKGRAY);
-    gfx_SetTextBGColor(COL_WHITE);
-    if (mol.num_res > 1) {
-        safe_print("[L/R] resonance  [alpha] charge  [clear] back", 6, SCR_H - 10);
-    } else {
-        safe_print("[alpha] charge  [clear] back to periodic table", 16, SCR_H - 10);
+    bool card_drawn = false;
+    if (vsepr_card_enabled) {
+        card_drawn = draw_vsepr_info_card(&mol, ls, ax, ay, vsepr_force_visible);
     }
+
+    gfx_SetTextFGColor(UI_TEXT);
+    gfx_SetTextBGColor(UI_BG);
+    if (mol.num_res > 1) {
+        if (card_drawn) {
+            safe_print("[L/R] [alpha]chg [2nd]hide [clear]back", 0, SCR_H - 10);
+        } else {
+            safe_print("[L/R] [alpha]chg [2nd]show [clear]back", 0, SCR_H - 10);
+        }
+    } else {
+        if (card_drawn) {
+            safe_print("[alpha]chg [2nd]hide [clear]periodic", 0, SCR_H - 10);
+        } else {
+            safe_print("[alpha]chg [2nd]show [clear]periodic", 0, SCR_H - 10);
+        }
+    }
+
+    /*
+     * Keep the VSEPR panel on the topmost layer when enabled so it does not
+     * get visually cut by any Lewis-structure render pass.
+     */
+    if (card_drawn && vsepr_card_enabled) {
+        draw_vsepr_info_card(&mol, ls, ax, ay, vsepr_force_visible);
+    }
+
+    return card_drawn;
 }
 
 int main(void)
@@ -311,6 +337,9 @@ int main(void)
 
     bool running = true;
     bool show_lewis = false;
+    bool vsepr_force_visible = false;
+    bool vsepr_card_enabled = true;
+    bool last_card_drawn = false;
     bool warning = false;
     uint8_t warning_timer = 0;
     uint8_t key_delay = 0;
@@ -328,7 +357,23 @@ int main(void)
         if (show_lewis) {
             if (kb_Data[6] & kb_Clear) {
                 show_lewis = false;
+                vsepr_force_visible = false;
+                vsepr_card_enabled = true;
+                last_card_drawn = false;
                 continue;
+            }
+
+            if (key_delay == 0 && (kb_Data[1] & kb_2nd)) {
+                if (!vsepr_card_enabled) {
+                    vsepr_card_enabled = true;
+                    vsepr_force_visible = false;
+                } else if (!last_card_drawn && !vsepr_force_visible) {
+                    vsepr_force_visible = true;
+                } else {
+                    vsepr_card_enabled = false;
+                    vsepr_force_visible = false;
+                }
+                key_delay = 8;
             }
 
             if (key_delay == 0 && (kb_Data[2] & kb_Alpha)) {
@@ -349,7 +394,7 @@ int main(void)
             }
             if (key_delay > 0) key_delay--;
 
-            draw_lewis();
+            last_card_drawn = draw_lewis(vsepr_force_visible, vsepr_card_enabled);
         } else {
             if (kb_Data[1] & kb_Mode) {
                 running = false;
@@ -401,6 +446,9 @@ int main(void)
                     if (mol.num_atoms >= 1) {
                         generate_resonance(&mol);
                         show_lewis = true;
+                        vsepr_force_visible = false;
+                        vsepr_card_enabled = true;
+                        last_card_drawn = false;
                     }
                     key_delay = 10;
                 }
@@ -410,13 +458,13 @@ int main(void)
             draw_periodic_table(&mol, cur_row, cur_col);
 
             if (warning && warning_timer > 0) {
-                gfx_SetColor(COL_RED);
+                gfx_SetColor(UI_ALERT_BG);
                 gfx_FillRectangle(40, 100, 240, 30);
-                gfx_SetColor(COL_BLACK);
+                gfx_SetColor(UI_ALERT_TEXT);
                 gfx_Rectangle(40, 100, 240, 30);
                 gfx_SetTextScale(1, 1);
-                gfx_SetTextFGColor(COL_BLACK);
-                gfx_SetTextBGColor(COL_RED);
+                gfx_SetTextFGColor(UI_ALERT_TEXT);
+                gfx_SetTextBGColor(UI_ALERT_BG);
                 safe_print("Max 6 heavy atoms!", 72, 110);
                 warning_timer--;
                 if (warning_timer == 0) warning = false;

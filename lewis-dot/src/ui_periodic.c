@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ui_theme.h"
 #include "ui_text.h"
 
 void move_cursor(uint8_t *cur_row, uint8_t *cur_col, int dr, int dc)
@@ -70,15 +71,15 @@ void move_cursor(uint8_t *cur_row, uint8_t *cur_col, int dr, int dc)
 
 void draw_periodic_table(const Molecule *mol, uint8_t cur_row, uint8_t cur_col)
 {
-    gfx_FillScreen(COL_WHITE);
+    gfx_FillScreen(UI_BG);
 
     uint8_t sel_elem = pt_grid[cur_row][cur_col];
 
     /* Top info bar */
-    gfx_SetColor(COL_BLUE);
+    gfx_SetColor(UI_SELECTED_BG);
     gfx_FillRectangle(0, INFO_Y, SCR_W, INFO_H);
-    gfx_SetTextFGColor(COL_WHITE);
-    gfx_SetTextBGColor(COL_BLUE);
+    gfx_SetTextFGColor(UI_SELECTED_TEXT);
+    gfx_SetTextBGColor(UI_SELECTED_BG);
     safe_print("Lewis Dot Structure Generator", 36, 4);
 
     if (sel_elem != ELEM_NONE) {
@@ -92,30 +93,30 @@ void draw_periodic_table(const Molecule *mol, uint8_t cur_row, uint8_t cur_col)
     }
 
     /* Selected atoms bar */
-    gfx_SetColor(COL_GRAY);
+    gfx_SetColor(UI_SELECTED_BG);
     gfx_FillRectangle(0, SEL_Y, SCR_W, SEL_H);
-    gfx_SetTextFGColor(COL_BLACK);
-    gfx_SetTextBGColor(COL_GRAY);
+    gfx_SetTextFGColor(UI_SELECTED_TEXT);
+    gfx_SetTextBGColor(UI_SELECTED_BG);
 
     if (mol->num_atoms > 0) {
         int x = 4;
         gfx_SetTextScale(1, 1);
         for (uint8_t i = 0; i < mol->num_atoms && x < SCR_W - 24; i++) {
             const Element *e = &elements[mol->atoms[i].elem];
-            gfx_SetColor(e->color);
+            gfx_SetColor(UI_SURFACE);
             gfx_FillRectangle(x, SEL_Y + 3, 18, 14);
-            gfx_SetColor(COL_BLACK);
+            gfx_SetColor(UI_BORDER);
             gfx_Rectangle(x, SEL_Y + 3, 18, 14);
-            gfx_SetTextFGColor(text_color_for_bg(e->color));
-            gfx_SetTextBGColor(e->color);
+            gfx_SetTextFGColor(UI_TEXT);
+            gfx_SetTextBGColor(UI_SURFACE);
             int tx = x + (18 - (int)strlen(e->symbol) * 8) / 2;
             int ty = SEL_Y + 6;
             safe_print(e->symbol, tx, ty);
             x += 20;
         }
 
-        gfx_SetTextFGColor(COL_BLACK);
-        gfx_SetTextBGColor(COL_GRAY);
+        gfx_SetTextFGColor(UI_SELECTED_TEXT);
+        gfx_SetTextBGColor(UI_SELECTED_BG);
 
         int total_ve = 0;
         for (uint8_t i = 0; i < mol->num_atoms; i++) {
@@ -151,8 +152,8 @@ void draw_periodic_table(const Molecule *mol, uint8_t cur_row, uint8_t cur_col)
         } else if (mol->charge < 0) {
             int_to_str(mol->charge, cbuf + 4);
         }
-        gfx_SetTextFGColor(COL_BLACK);
-        gfx_SetTextBGColor(COL_GRAY);
+        gfx_SetTextFGColor(UI_SELECTED_TEXT);
+        gfx_SetTextBGColor(UI_SELECTED_BG);
         safe_print(cbuf, SCR_W - 56, SEL_Y + 22);
     }
 
@@ -167,21 +168,22 @@ void draw_periodic_table(const Molecule *mol, uint8_t cur_row, uint8_t cur_col)
 
             int cx = pt_x0 + c * PT_CELL_W;
             int cy = PT_Y + r * PT_CELL_H;
+            bool is_selected = (r == cur_row && c == cur_col);
+            uint8_t cell_bg = is_selected ? UI_SELECTED_BG : UI_SURFACE;
+            uint8_t cell_text = is_selected ? UI_SELECTED_TEXT : UI_TEXT;
 
-            gfx_SetColor(elements[ei].color);
+            gfx_SetColor(cell_bg);
             gfx_FillRectangle(cx + 1, cy + 1, PT_CELL_W - 2, PT_CELL_H - 2);
+            gfx_SetColor(UI_BORDER);
+            gfx_Rectangle(cx, cy, PT_CELL_W, PT_CELL_H);
 
-            if (r == cur_row && c == cur_col) {
-                gfx_SetColor(COL_WHITE);
-                gfx_Rectangle(cx, cy, PT_CELL_W, PT_CELL_H);
+            if (is_selected) {
+                gfx_SetColor(UI_SELECTED_TEXT);
                 gfx_Rectangle(cx + 1, cy + 1, PT_CELL_W - 2, PT_CELL_H - 2);
-            } else {
-                gfx_SetColor(COL_BLACK);
-                gfx_Rectangle(cx, cy, PT_CELL_W, PT_CELL_H);
             }
 
-            gfx_SetTextFGColor(COL_BLACK);
-            gfx_SetTextBGColor(elements[ei].color);
+            gfx_SetTextFGColor(cell_text);
+            gfx_SetTextBGColor(cell_bg);
             int tx = cx + (PT_CELL_W - (int)strlen(elements[ei].symbol) * 8) / 2;
             int ty = cy + (PT_CELL_H - 8) / 2;
             if (tx >= 0 && tx < SCR_W && ty >= 0 && ty < SCR_H) {
@@ -194,15 +196,15 @@ void draw_periodic_table(const Molecule *mol, uint8_t cur_row, uint8_t cur_col)
     if (sel_elem != ELEM_NONE) {
         const Element *e = &elements[sel_elem];
 
-        gfx_SetColor(e->color);
+        gfx_SetColor(UI_BORDER);
         gfx_FillRectangle(CARD_X, CARD_Y, CARD_W, CARD_H);
-        gfx_SetColor(COL_WHITE);
+        gfx_SetColor(UI_SURFACE);
         gfx_FillRectangle(CARD_X + 2, CARD_Y + 2, CARD_W - 4, CARD_H - 4);
-        gfx_SetColor(COL_BLACK);
+        gfx_SetColor(UI_BORDER);
         gfx_Rectangle(CARD_X, CARD_Y, CARD_W, CARD_H);
 
-        gfx_SetTextFGColor(COL_DKGRAY);
-        gfx_SetTextBGColor(COL_WHITE);
+        gfx_SetTextFGColor(UI_TEXT);
+        gfx_SetTextBGColor(UI_SURFACE);
         {
             char abuf[4];
             int_to_str(e->atomic_num, abuf);
@@ -214,8 +216,8 @@ void draw_periodic_table(const Molecule *mol, uint8_t cur_row, uint8_t cur_col)
             int sym_w = (int)strlen(e->symbol) * 24;
             int sx = CARD_X + (CARD_W - sym_w) / 2;
             int sy = CARD_Y + 16;
-            gfx_SetTextFGColor(e->color);
-            gfx_SetTextBGColor(COL_WHITE);
+            gfx_SetTextFGColor(UI_TEXT);
+            gfx_SetTextBGColor(UI_SURFACE);
             safe_print(e->symbol, sx, sy);
         }
         gfx_SetTextScale(1, 1);
@@ -223,8 +225,8 @@ void draw_periodic_table(const Molecule *mol, uint8_t cur_row, uint8_t cur_col)
         {
             int name_w = (int)strlen(e->name) * 8;
             int nx = CARD_X + (CARD_W - name_w) / 2;
-            gfx_SetTextFGColor(COL_BLACK);
-            gfx_SetTextBGColor(COL_WHITE);
+            gfx_SetTextFGColor(UI_TEXT);
+            gfx_SetTextBGColor(UI_SURFACE);
             safe_print(e->name, nx, CARD_Y + CARD_H - 22);
         }
 
@@ -232,13 +234,13 @@ void draw_periodic_table(const Molecule *mol, uint8_t cur_row, uint8_t cur_col)
             char vbuf[12] = "e-: ";
             append_int(vbuf, sizeof(vbuf), e->valence);
             int vw = (int)strlen(vbuf) * 8;
-            gfx_SetTextFGColor(COL_DKGRAY);
-            gfx_SetTextBGColor(COL_WHITE);
+            gfx_SetTextFGColor(UI_TEXT);
+            gfx_SetTextBGColor(UI_SURFACE);
             safe_print(vbuf, CARD_X + (CARD_W - vw) / 2, CARD_Y + CARD_H - 11);
         }
     }
 
-    gfx_SetTextFGColor(COL_DKGRAY);
-    gfx_SetTextBGColor(COL_WHITE);
+    gfx_SetTextFGColor(UI_TEXT);
+    gfx_SetTextBGColor(UI_BG);
     safe_print("[enter]add [del]undo [alpha]chg [2nd]go", 4, SCR_H - 10);
 }

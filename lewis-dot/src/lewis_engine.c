@@ -2,6 +2,47 @@
 
 #include <string.h>
 
+typedef struct {
+    uint8_t valence_pairs;
+    uint8_t bond_pairs;
+    uint8_t lone_pairs;
+    const char *ep_geometry;
+    const char *shape;
+    const char *hybridization;
+    const char *bond_angle;
+} VseprRow;
+
+static const VseprRow vsepr_rows[] = {
+    {1, 1, 0, "Linear", "Linear", "s", "180"},
+    {2, 2, 0, "Linear", "Linear", "sp", "180"},
+    {2, 1, 1, "Linear", "Linear", "sp", "180"},
+    {3, 3, 0, "Trigonal Planar", "Trigonal Planar", "sp2", "120"},
+    {3, 2, 1, "Trigonal Planar", "Bent", "sp2", "<120"},
+    {3, 1, 2, "Trigonal Planar", "Linear", "sp2", "180"},
+    {4, 4, 0, "Tetrahedral", "Tetrahedral", "sp3", "109.5"},
+    {4, 3, 1, "Tetrahedral", "Trigonal Pyramidal", "sp3", "<109.5"},
+    {4, 2, 2, "Tetrahedral", "Bent", "sp3", "<109.5"},
+    {4, 1, 3, "Tetrahedral", "Linear", "sp3", "180"},
+    {5, 5, 0, "Trigonal Bipyramidal", "Trigonal Bipyramidal", "sp3d", "90, 120"},
+    {5, 4, 1, "Trigonal Bipyramidal", "Seesaw", "sp3d", "<90, <120"},
+    {5, 3, 2, "Trigonal Bipyramidal", "T-shaped", "sp3d", "<90"},
+    {5, 2, 3, "Trigonal Bipyramidal", "Linear", "sp3d", "180"},
+    {5, 1, 4, "Trigonal Bipyramidal", "Linear", "sp3d", "180"},
+    {6, 6, 0, "Octahedral", "Octahedral", "sp3d2", "90"},
+    {6, 5, 1, "Octahedral", "Square Pyramidal", "sp3d2", "<90"},
+    {6, 4, 2, "Octahedral", "Square Planar", "sp3d2", "90"},
+    {6, 3, 3, "Octahedral", "T-shaped", "sp3d2", "<90"},
+    {6, 2, 4, "Octahedral", "Linear", "sp3d2", "180"},
+    {6, 1, 5, "Octahedral", "Linear", "sp3d2", "180"},
+    {7, 7, 0, "Pentagonal Bipyramidal", "Pentagonal Bipyramidal", "sp3d3", "72, 90"},
+    {7, 6, 1, "Pentagonal Bipyramidal", "Pentagonal Pyramidal", "sp3d3", "<90"},
+    {7, 5, 2, "Pentagonal Bipyramidal", "Pentagonal Planar", "sp3d3", "72"},
+    {7, 4, 3, "Pentagonal Bipyramidal", "Seesaw", "sp3d3", "<90, <72"},
+    {7, 3, 4, "Pentagonal Bipyramidal", "T-shaped", "sp3d3", "<90"},
+    {7, 2, 5, "Pentagonal Bipyramidal", "Linear", "sp3d3", "180"},
+    {7, 1, 6, "Pentagonal Bipyramidal", "Linear", "sp3d3", "180"},
+};
+
 static int bond_order_sum(const LewisStructure *ls, uint8_t atom_idx)
 {
     int sum = 0;
@@ -92,6 +133,93 @@ static bool is_protonated_terminal_oxygen(const Molecule *mol, const LewisStruct
     return false;
 }
 
+static int abs_int(int x)
+{
+    return (x < 0) ? -x : x;
+}
+
+static bool center_is_terminal_elem(uint8_t elem_idx)
+{
+    if (elem_idx == ELEM_H) return true;
+    const Element *e = &elements[elem_idx];
+    return (e->group == 17 || e->bond_cap <= 1);
+}
+
+static void score_structure(const Molecule *mol, const LewisStructure *ls, int *sum_abs_fc, int *nonzero_fc, int *abs_central_fc)
+{
+    int sum_abs = 0;
+    int nonzero = 0;
+
+    for (uint8_t i = 0; i < mol->num_atoms; i++) {
+        int fc = ls->formal_charge[i];
+        if (fc != 0) {
+            nonzero++;
+        }
+        sum_abs += abs_int(fc);
+    }
+
+    *sum_abs_fc = sum_abs;
+    *nonzero_fc = nonzero;
+    *abs_central_fc = abs_int(ls->formal_charge[mol->central]);
+}
+
+static bool candidate_is_better(int cand_sum_abs_fc,
+                                int cand_nonzero_fc,
+                                int cand_abs_central_fc,
+                                uint8_t cand_count,
+                                bool cand_terminal,
+                                uint8_t cand_eneg,
+                                uint8_t cand_period,
+                                uint8_t cand_atomic_num,
+                                int best_sum_abs_fc,
+                                int best_nonzero_fc,
+                                int best_abs_central_fc,
+                                uint8_t best_count,
+                                bool best_terminal,
+                                uint8_t best_eneg,
+                                uint8_t best_period,
+                                uint8_t best_atomic_num)
+{
+    if (cand_sum_abs_fc != best_sum_abs_fc) return cand_sum_abs_fc < best_sum_abs_fc;
+    if (cand_nonzero_fc != best_nonzero_fc) return cand_nonzero_fc < best_nonzero_fc;
+    if (cand_abs_central_fc != best_abs_central_fc) return cand_abs_central_fc < best_abs_central_fc;
+    if (cand_count != best_count) return cand_count < best_count;
+
+    if (cand_terminal != best_terminal) return !cand_terminal;
+    if (cand_eneg != best_eneg) return cand_eneg < best_eneg;
+    if (cand_period != best_period) return cand_period < best_period;
+    if (cand_atomic_num != best_atomic_num) return cand_atomic_num < best_atomic_num;
+    return false;
+}
+
+static uint8_t gather_center_candidates(const Molecule *mol, uint8_t out_idx[MAX_ATOMS])
+{
+    uint8_t n = 0;
+
+    /* Pass 1: non-terminal, non-hydrogen atoms. */
+    for (uint8_t i = 0; i < mol->num_atoms; i++) {
+        uint8_t elem_idx = mol->atoms[i].elem;
+        if (elem_idx == ELEM_H) continue;
+        if (center_is_terminal_elem(elem_idx)) continue;
+        out_idx[n++] = i;
+    }
+
+    /* Pass 2: remaining non-hydrogen atoms (halogens/noble-like terminals). */
+    for (uint8_t i = 0; i < mol->num_atoms; i++) {
+        uint8_t elem_idx = mol->atoms[i].elem;
+        if (elem_idx == ELEM_H) continue;
+        if (!center_is_terminal_elem(elem_idx)) continue;
+        out_idx[n++] = i;
+    }
+
+    /* All-hydrogen fallback (e.g., H2). */
+    if (n == 0 && mol->num_atoms > 0) {
+        out_idx[n++] = 0;
+    }
+
+    return n;
+}
+
 static int required_electrons(const Molecule *mol, uint8_t atom_idx, bool is_central)
 {
     uint8_t elem_idx = mol->atoms[atom_idx].elem;
@@ -139,7 +267,7 @@ static int bond_limit(const Molecule *mol, uint8_t atom_idx, bool is_central)
     if (is_central && e->period >= 3) {
         if (e->group == 15 && limit < 5) limit = 5;
         if (e->group == 16 && limit < 6) limit = 6;
-        if (e->group == 17 && limit < 4) limit = 4;
+        if (e->group == 17 && limit < 7) limit = 7;
     }
 
     return limit;
@@ -192,6 +320,28 @@ static bool build_skeleton(const Molecule *mol, LewisStructure *ls, int *ve_pool
     }
 
     if (mol->num_atoms == 1) {
+        return true;
+    }
+
+    /*
+     * Triatomic special-case: the chosen central atom must connect to both
+     * other atoms (A-X-A / A-X-B style), not a three-atom chain.
+     */
+    if (mol->num_atoms == 3) {
+        uint8_t others[2];
+        uint8_t n_others = 0;
+
+        connected[mol->central] = true;
+        for (uint8_t i = 0; i < mol->num_atoms; i++) {
+            if (i == mol->central) continue;
+            others[n_others++] = i;
+        }
+
+        if (n_others != 2) return false;
+        if (!add_single_bond(ls, mol->central, others[0], ve_pool, remain)) return false;
+        connected[others[0]] = true;
+        if (!add_single_bond(ls, mol->central, others[1], ve_pool, remain)) return false;
+        connected[others[1]] = true;
         return true;
     }
 
@@ -506,17 +656,94 @@ void generate_resonance(Molecule *mol)
         return;
     }
 
-    mol->central = find_central(mol);
     mol->total_ve = 0;
     for (uint8_t i = 0; i < mol->num_atoms; i++) {
         mol->total_ve += elements[mol->atoms[i].elem].valence;
     }
     mol->total_ve -= mol->charge;
 
-    if (!generate_structure(mol, &mol->res[0], &mol->invalid_reason)) {
+    uint8_t candidates[MAX_ATOMS];
+    uint8_t elem_counts[NUM_ELEMENTS];
+    uint8_t n_candidates = gather_center_candidates(mol, candidates);
+    memset(elem_counts, 0, sizeof(elem_counts));
+    for (uint8_t i = 0; i < mol->num_atoms; i++) {
+        elem_counts[mol->atoms[i].elem]++;
+    }
+
+    bool found_valid = false;
+    uint8_t best_center = find_central(mol);
+    LewisStructure best_ls;
+    InvalidReason first_reason = INVALID_NONE;
+
+    int best_sum_abs_fc = 0;
+    int best_nonzero_fc = 0;
+    int best_abs_central_fc = 0;
+    uint8_t best_count = 0;
+    bool best_terminal = false;
+    uint8_t best_eneg = 0;
+    uint8_t best_period = 0;
+    uint8_t best_atomic_num = 0;
+
+    for (uint8_t ci = 0; ci < n_candidates; ci++) {
+        mol->central = candidates[ci];
+
+        LewisStructure cand_ls;
+        InvalidReason reason = INVALID_NONE;
+        if (!generate_structure(mol, &cand_ls, &reason)) {
+            if (first_reason == INVALID_NONE) {
+                first_reason = reason;
+            }
+            continue;
+        }
+
+        int cand_sum_abs_fc = 0;
+        int cand_nonzero_fc = 0;
+        int cand_abs_central_fc = 0;
+        score_structure(mol, &cand_ls, &cand_sum_abs_fc, &cand_nonzero_fc, &cand_abs_central_fc);
+
+        const Element *cand_elem = &elements[mol->atoms[mol->central].elem];
+        uint8_t cand_count = elem_counts[mol->atoms[mol->central].elem];
+        bool cand_terminal = center_is_terminal_elem(mol->atoms[mol->central].elem);
+
+        if (!found_valid ||
+            candidate_is_better(cand_sum_abs_fc,
+                                cand_nonzero_fc,
+                                cand_abs_central_fc,
+                                cand_count,
+                                cand_terminal,
+                                cand_elem->eneg,
+                                cand_elem->period,
+                                cand_elem->atomic_num,
+                                best_sum_abs_fc,
+                                best_nonzero_fc,
+                                best_abs_central_fc,
+                                best_count,
+                                best_terminal,
+                                best_eneg,
+                                best_period,
+                                best_atomic_num)) {
+            found_valid = true;
+            best_center = mol->central;
+            memcpy(&best_ls, &cand_ls, sizeof(best_ls));
+
+            best_sum_abs_fc = cand_sum_abs_fc;
+            best_nonzero_fc = cand_nonzero_fc;
+            best_abs_central_fc = cand_abs_central_fc;
+            best_count = cand_count;
+            best_terminal = cand_terminal;
+            best_eneg = cand_elem->eneg;
+            best_period = cand_elem->period;
+            best_atomic_num = cand_elem->atomic_num;
+        }
+    }
+
+    if (!found_valid) {
+        mol->invalid_reason = (first_reason == INVALID_NONE) ? INVALID_SKELETON : first_reason;
         return;
     }
 
+    mol->central = best_center;
+    memcpy(&mol->res[0], &best_ls, sizeof(best_ls));
     mol->invalid_reason = INVALID_NONE;
     mol->num_res = 1;
 
@@ -579,6 +806,102 @@ void generate_resonance(Molecule *mol)
             }
         }
     }
+}
+
+static void fill_vsepr_fallback(VseprInfo *out)
+{
+    switch (out->valence_pairs) {
+        case 1:
+            out->ep_geometry = "Linear";
+            out->hybridization = "s";
+            out->bond_angle = "180";
+            break;
+        case 2:
+            out->ep_geometry = "Linear";
+            out->hybridization = "sp";
+            out->bond_angle = "180";
+            break;
+        case 3:
+            out->ep_geometry = "Trigonal Planar";
+            out->hybridization = "sp2";
+            out->bond_angle = "120";
+            break;
+        case 4:
+            out->ep_geometry = "Tetrahedral";
+            out->hybridization = "sp3";
+            out->bond_angle = "109.5";
+            break;
+        case 5:
+            out->ep_geometry = "Trigonal Bipyramidal";
+            out->hybridization = "sp3d";
+            out->bond_angle = "90, 120";
+            break;
+        case 6:
+            out->ep_geometry = "Octahedral";
+            out->hybridization = "sp3d2";
+            out->bond_angle = "90";
+            break;
+        case 7:
+            out->ep_geometry = "Pentagonal Bipyramidal";
+            out->hybridization = "sp3d3";
+            out->bond_angle = "72, 90";
+            break;
+        default:
+            out->ep_geometry = "Unknown";
+            out->hybridization = "Unknown";
+            out->bond_angle = "N/A";
+            break;
+    }
+
+    if (out->bond_pairs == 0) {
+        out->shape = "No Bonded Atoms";
+    } else if (out->bond_pairs <= 1) {
+        out->shape = "Linear";
+    } else {
+        out->shape = out->ep_geometry;
+    }
+}
+
+bool lewis_get_vsepr_info(const Molecule *mol, const LewisStructure *ls, VseprInfo *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+
+    memset(out, 0, sizeof(*out));
+
+    if (mol == NULL || ls == NULL) {
+        return false;
+    }
+    if (mol->num_atoms == 0 || mol->central >= mol->num_atoms) {
+        return false;
+    }
+
+    uint8_t bond_pairs = 0;
+    for (uint8_t b = 0; b < ls->num_bonds; b++) {
+        if (ls->bonds[b].a == mol->central || ls->bonds[b].b == mol->central) {
+            bond_pairs++;
+        }
+    }
+
+    out->bond_pairs = bond_pairs;
+    out->lone_pairs = ls->lone_pairs[mol->central];
+    out->valence_pairs = (uint8_t)(out->bond_pairs + out->lone_pairs);
+
+    for (uint8_t i = 0; i < (uint8_t)(sizeof(vsepr_rows) / sizeof(vsepr_rows[0])); i++) {
+        if (vsepr_rows[i].valence_pairs == out->valence_pairs &&
+            vsepr_rows[i].bond_pairs == out->bond_pairs &&
+            vsepr_rows[i].lone_pairs == out->lone_pairs) {
+            out->ep_geometry = vsepr_rows[i].ep_geometry;
+            out->shape = vsepr_rows[i].shape;
+            out->hybridization = vsepr_rows[i].hybridization;
+            out->bond_angle = vsepr_rows[i].bond_angle;
+            return true;
+        }
+    }
+
+    fill_vsepr_fallback(out);
+    return true;
 }
 
 const char *invalid_reason_message(InvalidReason reason)
